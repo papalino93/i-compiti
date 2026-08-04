@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>I Compiti</title>
+<meta name="theme-color" content="#F3F0E9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15181A" media="(prefers-color-scheme: dark)">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+/* ==========================================================================
+   IL CERCHIO — v3
+   Compositore (co-pilota) → link WhatsApp → accettazione → ritorno nel gruppo.
+   Nessun backend: lo stato del compito vive nel gruppo WhatsApp.
+
+     ?t=<payload>     la pagina del compito   (formato primario)
+     #/t/<payload>    stesso, retrocompatibile
+
+   Correzioni v3 rispetto a v2:
+     · URL: niente più "nullsrcdoc". Origine validata, https forzato,
+       avviso esplicito e invio bloccato finché l'indirizzo non è valido.
+     · [hidden] ora vince sempre: il blocco dettagli e le checklist
+       venivano mostrati anche quando dovevano restare nascosti.
+     · payload compatto (array anziché oggetto): link 25% più corto.
+     · lista operativa e "parole sue" separate: erano finite nello
+       stesso riquadro, con due significati diversi.
+   ========================================================================== */
+
+:root{
+  --paper:      #F3F0E9;
+  --card:       #FFFDF8;
+  --sand:       #EAE5D9;
+  --line:       #E2DCCF;
+  --line-firm:  #D6CFBE;
+  --ink:        #1F2420;
+  --ink-soft:   #5F5C4E;
+  --ink-dim:    #77725F;
+  --green:      #1C3A2E;
+  --green-hi:   #24493A;
+  --on-green:   #FBFAF6;
+  --warn-bg:    #F6EEDC;
+  --warn-line:  #C9A961;
+
+  --serif:"Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans:"Work Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --spring: cubic-bezier(.22,.9,.3,1);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#15181A; --card:#1E2225; --sand:#252A2C;
+    --line:#333A3C; --line-firm:#454C4E;
+    --ink:#F1EFE9; --ink-soft:#B3B8B4; --ink-dim:#9AA09B;
+    --green:#5FA894; --green-hi:#6FBAA5; --on-green:#0E1412;
+    --warn-bg:#2C2718; --warn-line:#9C8340;
+  }
+}
+@media (prefers-contrast: more){
+  :root{ --ink-soft:#3A3A32; --ink-dim:#43433A; --line:#9C968A; }
+}
+
+*,*::before,*::after{ box-sizing:border-box; margin:0; padding:0; }
+/* FIX v3 — [hidden] deve battere qualsiasi classe con display.
+   Senza questo, .detail/.checklist/.count restavano visibili. */
+[hidden]{ display:none !important; }
+
+html{ -webkit-text-size-adjust:100%; }
+body{
+  min-height:100svh; background:var(--paper); color:var(--ink);
+  font-family:var(--sans); font-size:17px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  display:flex; justify-content:center;
+  overflow-wrap:anywhere;
+}
+/* Chi riceve il link può avere 85 anni: il corpo sale a 20px. */
+body.receiving{ font-size:20px; }
+
+.shell{
+  width:100%; max-width:560px; min-height:100svh;
+  display:flex; flex-direction:column;
+  padding:30px 20px calc(28px + env(safe-area-inset-bottom));
+}
+body.receiving .shell{ max-width:460px; }
+@media (min-width:900px){ .shell{ padding-top:52px; } }
+
+button{ font:inherit; color:inherit; background:none; border:none; cursor:pointer; }
+:focus-visible{ outline:3px solid var(--green); outline-offset:3px; border-radius:6px; }
+
+/* ---------------- intestazione ---------------- */
+.top{ display:flex; align-items:center; gap:14px;
+  padding-bottom:20px; border-bottom:1px solid var(--line); }
+.ring{ width:52px; height:52px; flex:none; position:relative; }
+.ring svg{ width:100%; height:100%; display:block; transform:rotate(-90deg); }
+.ring-track{ fill:none; stroke:var(--line-firm); stroke-width:2; }
+.ring-arc{ fill:none; stroke:var(--green); stroke-width:2; stroke-linecap:round;
+  stroke-dasharray:150.8; stroke-dashoffset:42;
+  transition:stroke-dashoffset 1.15s var(--spring); }
+body.closed .ring-arc{ stroke-dashoffset:0; }
+.ring-halo{ fill:none; stroke:var(--green); stroke-width:1.2; opacity:0; transform-origin:50% 50%; }
+.ring-initial{ position:absolute; inset:6px; border-radius:999px;
+  background:var(--green); color:var(--on-green);
+  display:grid; place-items:center; font-family:var(--serif); font-size:19px; }
+.who{ flex:1 1 auto; min-width:0; }
+.who-name{ font-size:18px; font-weight:600; letter-spacing:-.01em; }
+.who-meta{ font-size:15px; color:var(--ink-dim); }
+.count{ display:flex; align-items:center; gap:8px;
+  font-size:14px; color:var(--ink-dim); white-space:nowrap; }
+.stack{ display:flex; }
+.stack i{ width:22px; height:22px; border-radius:999px;
+  border:2px solid var(--paper); background:var(--line-firm); }
+.stack i+i{ margin-left:-8px; }
+
+/* ---------------- avviso indirizzo ---------------- */
+.warn{
+  display:flex; flex-direction:column; gap:10px; align-items:flex-start;
+  margin-top:22px; padding:16px 18px;
+  background:var(--warn-bg); border:1px solid var(--warn-line); border-radius:14px;
+}
+.warn b{ font-size:16px; font-weight:600; }
+.warn p{ font-size:15px; line-height:1.45; color:var(--ink-soft); }
+.warn button{ font-size:15px; font-weight:600; color:var(--green);
+  text-decoration:underline; text-underline-offset:4px; padding:6px 0; }
+
+/* ---------------- struttura ---------------- */
+main{ flex:1 0 auto; padding-top:28px; }
+body.receiving main{ display:flex; flex-direction:column; justify-content:center; }
+.view{ transition:opacity .22s ease, transform .28s var(--spring); }
+.view.enter{ opacity:0; transform:translateY(16px); }
+.view.leave{ opacity:0; transform:translateY(-10px); }
+
+.block{ display:flex; flex-direction:column; gap:18px; }
+.block + .block{ margin-top:36px; }
+.eyebrow{ font-size:13px; font-weight:600; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--ink-dim); }
+h2.step{ font-family:var(--serif); font-size:31px; font-weight:600;
+  letter-spacing:-.015em; line-height:1.1; margin-top:6px; }
+.hint{ font-size:16px; line-height:1.5; color:var(--ink-soft); text-wrap:pretty; }
+
+/* ---------------- griglia compiti ---------------- */
+.grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.tile{
+  position:relative; min-height:112px; padding:15px 16px; text-align:left;
+  display:flex; flex-direction:column; justify-content:space-between; gap:10px;
+  background:var(--card); border:1px solid var(--line); border-radius:13px;
+  transition:box-shadow .14s ease, transform .14s var(--spring);
+}
+.tile:active{ transform:scale(.98); }
+.tile[aria-pressed="true"]{ box-shadow:inset 0 0 0 2px var(--green); }
+.tile-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.tile svg{ width:21px; height:21px; stroke:var(--green); fill:none;
+  stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+.tick{ width:19px; height:19px; border-radius:999px; flex:none;
+  background:var(--green); color:var(--on-green);
+  font-size:12px; line-height:19px; text-align:center; }
+.tile-body{ display:flex; flex-direction:column; gap:3px; }
+.tile-body b{ font-size:16px; font-weight:600; line-height:1.25; text-wrap:balance; }
+.tile-body small{ font-size:14px; color:var(--ink-dim); line-height:1.35; }
+
+/* ---------------- dettagli ---------------- */
+.detail{ display:flex; flex-direction:column; gap:13px; padding:18px;
+  background:var(--card); border:1px solid var(--line-firm); border-radius:14px; }
+.detail-head{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+.detail-head b{ font-size:16px; font-weight:600; }
+.detail-head span{ font-size:14px; color:var(--ink-dim); white-space:nowrap; }
+.items{ display:flex; flex-direction:column; gap:8px; }
+.item{ display:flex; align-items:center; gap:10px;
+  padding:11px 12px; background:var(--paper); border-radius:10px; }
+.item .dot{ width:5px; height:5px; border-radius:999px; background:var(--green); flex:none; }
+.item .txt{ flex:1 1 auto; min-width:0; font-size:16px; line-height:1.3; }
+.item .rm{ flex:none; width:34px; height:34px; border-radius:999px;
+  color:var(--ink-dim); font-size:19px; line-height:1; }
+.item .rm:hover{ background:var(--sand); color:var(--ink); }
+.row{ display:flex; gap:8px; }
+.input{ flex:1 1 auto; min-width:0; width:100%;
+  padding:13px 14px; font:inherit; font-size:16px;
+  color:var(--ink); background:var(--card);
+  border:1px solid var(--line); border-radius:10px; outline:none; }
+.input::placeholder{ color:var(--ink-dim); }
+.input:focus{ border-color:var(--green); }
+textarea.input{ resize:vertical; line-height:1.45; }
+.add{ flex:none; padding:0 18px; font-size:16px; font-weight:500;
+  color:var(--green); background:var(--paper);
+  border:1px solid var(--line-firm); border-radius:10px; }
+.micro{ font-size:14px; color:var(--ink-dim); line-height:1.4; }
+label.lbl{ display:block; font-size:15px; font-weight:500; color:var(--ink-soft); }
+
+/* ---------------- chip ---------------- */
+.chips{ display:flex; flex-wrap:wrap; gap:8px; }
+.chip{ min-height:48px; padding:0 18px; border-radius:999px;
+  background:var(--card); border:1px solid var(--line);
+  font-size:16px; font-weight:500;
+  display:inline-flex; align-items:center;
+  transition:transform .13s var(--spring); }
+.chip:active{ transform:scale(.97); }
+.chip[aria-pressed="true"]{ background:var(--green); color:var(--on-green); border-color:var(--green); }
+
+/* ---------------- anteprima e invio ---------------- */
+.send-box{ display:flex; flex-direction:column; gap:14px;
+  margin-top:36px; padding:20px; background:var(--sand); border-radius:16px; }
+.sentence{ font-family:var(--serif); font-size:20px; line-height:1.4;
+  color:var(--ink); text-wrap:pretty; }
+.sentence-sub{ font-size:15px; line-height:1.45; color:var(--ink-soft); text-wrap:pretty; }
+
+.btn{ min-height:58px; width:100%; padding:0 18px; border-radius:13px;
+  display:inline-flex; align-items:center; justify-content:center; gap:10px;
+  font-size:18px; font-weight:600; letter-spacing:-.005em;
+  transition:transform .13s var(--spring), opacity .18s ease, background-color .15s ease; }
+body.receiving .btn{ min-height:64px; font-size:20px; }
+.btn:active{ transform:scale(.975); }
+.btn.primary{ background:var(--green); color:var(--on-green); }
+.btn.primary:hover{ background:var(--green-hi); }
+.btn.primary[aria-disabled="true"]{ opacity:.42; }
+.btn.ghost{ background:var(--card); border:1px solid var(--line-firm); color:var(--ink); }
+.btn.quiet{ min-height:50px; color:var(--ink-dim); font-size:16px; font-weight:400;
+  text-decoration:underline; text-underline-offset:4px; }
+.btn svg{ width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:1.8;
+  stroke-linecap:round; stroke-linejoin:round; }
+.action-hint{ text-align:center; font-size:15px; color:var(--ink-dim); line-height:1.45; }
+.pills{ display:flex; flex-wrap:wrap; gap:10px; padding-top:4px; }
+.pill{ padding:11px 18px; font-size:16px; font-weight:500; border-radius:999px;
+  background:var(--card); border:1px solid var(--line-firm); }
+.pill.bare{ background:none; border-color:transparent; color:var(--ink-dim); }
+
+/* ---------------- inviato ---------------- */
+.sent-box{ display:flex; flex-direction:column; gap:15px; align-items:flex-start;
+  padding:30px; background:var(--card); border:1px solid var(--line); border-radius:16px; }
+.seal{ width:44px; height:44px; border-radius:999px;
+  background:var(--green); color:var(--on-green);
+  display:grid; place-items:center; font-size:20px; }
+h2.sealed{ font-family:var(--serif); font-size:29px; font-weight:600;
+  letter-spacing:-.015em; line-height:1.1; }
+
+/* ---------------- lato ricevente ---------------- */
+.card{ background:var(--card); border:1px solid var(--line);
+  border-radius:20px; padding:26px 24px; }
+.card-ico svg{ width:32px; height:32px; stroke:var(--green); fill:none;
+  stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+.card-title{ font-family:var(--serif); font-weight:600; font-size:37px;
+  line-height:1.12; letter-spacing:-.02em; margin:14px 0 12px; }
+.card-when{ font-size:21px; font-weight:600; }
+.card-dur{ font-size:17px; color:var(--ink-dim); }
+
+.section-lbl{ font-size:15px; font-weight:600; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--ink-dim); margin-bottom:8px; }
+.plainlist{ margin-top:20px; }
+.plainlist .item{ background:var(--paper); }
+
+/* la lista diventa spuntabile solo dopo il sì: serve alla Coop */
+.checklist{ display:flex; flex-direction:column; gap:8px; }
+.check{ display:flex; align-items:center; gap:12px; width:100%; text-align:left;
+  padding:13px 14px; background:var(--paper); border-radius:11px;
+  font-size:18px; line-height:1.3; }
+.check .box{ width:27px; height:27px; flex:none; border-radius:7px;
+  border:2px solid var(--line-firm); display:grid; place-items:center;
+  font-size:15px; color:transparent; }
+.check[aria-pressed="true"] .box{ background:var(--green); border-color:var(--green); color:var(--on-green); }
+.check[aria-pressed="true"] .txt{ text-decoration:line-through; color:var(--ink-dim); }
+
+.info{ margin-top:20px; padding:15px 17px; background:var(--paper);
+  border:1px solid var(--line); border-radius:12px;
+  font-size:17px; color:var(--ink-soft); line-height:1.45; }
+.words{ margin-top:20px; padding:16px 18px; background:var(--paper);
+  border-left:3px solid var(--green); border-radius:0 12px 12px 0;
+  font-family:var(--serif); font-size:18px; color:var(--ink-soft); line-height:1.45; }
+.words-from{ display:block; margin-top:8px; font-family:var(--sans);
+  font-size:15px; font-weight:600; color:var(--ink); }
+
+.kicker{ font-family:var(--serif); font-size:38px; font-weight:600;
+  line-height:1.1; letter-spacing:-.02em; }
+.kicker-sub{ font-family:var(--serif); font-size:26px; font-weight:400;
+  color:var(--ink-soft); margin-top:6px; }
+.recap{ margin-top:22px; padding:18px 20px; font-size:18px;
+  background:var(--card); border:1px solid var(--line); border-radius:16px; }
+.recap span{ color:var(--ink-dim); }
+.after{ margin-top:20px; font-size:17px; color:var(--ink-soft); line-height:1.5; }
+.stack-actions{ display:flex; flex-direction:column; gap:11px; padding-top:22px; }
+.reassure{ text-align:center; font-size:16px; color:var(--ink-dim);
+  line-height:1.45; padding-top:10px; }
+
+/* ---------------- toast ---------------- */
+.toast-layer{ position:fixed; left:0; right:0;
+  bottom:calc(16px + env(safe-area-inset-bottom));
+  display:flex; justify-content:center; pointer-events:none; padding:0 18px; z-index:30; }
+.toast{ max-width:420px; padding:14px 20px; border-radius:13px;
+  background:var(--ink); color:var(--paper); font-size:16px; line-height:1.4; text-align:center;
+  box-shadow:0 10px 30px rgb(0 0 0 / .18);
+  opacity:0; transform:translateY(16px) scale(.97);
+  transition:opacity .25s ease, transform .33s var(--spring); }
+.toast.show{ opacity:1; transform:none; }
+
+.settings-link{ margin-top:30px; text-align:center; }
+.settings-link button{ font-size:15px; color:var(--ink-dim);
+  text-decoration:underline; text-underline-offset:4px; padding:8px; }
+.sr{ position:absolute; width:1px; height:1px; padding:0; overflow:hidden;
+  clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+}
+/* telefoni stretti: la griglia diventa elenco */
+@media (max-width:430px){
+  .grid{ grid-template-columns:1fr; gap:8px; }
+  .tile{ min-height:0; flex-direction:row; align-items:center; gap:14px; }
+  .tile-head{ flex:none; flex-direction:column; }
+  .tile-body{ flex:1 1 auto; }
+  h2.step{ font-size:27px; }
+  .card-title{ font-size:32px; }
+  .kicker{ font-size:33px; }
+}
+
+/* ---- foto allegate: ricetta, tessera sanitaria, lista scritta a mano ---- */
+.shots{ display:flex; flex-wrap:wrap; gap:9px; }
+.shot{ position:relative; width:78px; height:78px; border-radius:11px; overflow:hidden;
+  border:1px solid var(--line-firm); background:var(--paper); }
+.shot img{ width:100%; height:100%; object-fit:cover; display:block; }
+.shot button{ position:absolute; top:3px; right:3px; width:28px; height:28px; border-radius:999px;
+  background:rgb(0 0 0 / .62); color:#fff; font-size:16px; line-height:28px; text-align:center; }
+.shot-add{ width:78px; height:78px; border-radius:11px; border:1px dashed var(--line-firm);
+  background:var(--paper); display:grid; place-items:center; color:var(--green); }
+.shot-add svg{ width:23px; height:23px; stroke:currentColor; fill:none; stroke-width:1.6;
+  stroke-linecap:round; stroke-linejoin:round; }
+.attach{ margin-top:18px; padding:14px 16px; background:var(--paper);
+  border:1px dashed var(--line-firm); border-radius:12px;
+  font-size:16px; line-height:1.45; color:var(--ink-soft); }
+
+/* ---------------- lingua / caffè ---------------- */
+.lang-switch{ flex:none; min-width:40px; height:34px; padding:0 12px; border-radius:999px;
+  border:1px solid var(--line-firm); background:var(--card); color:var(--ink-soft);
+  font-size:13px; font-weight:600; letter-spacing:.03em; }
+.lang-switch:active{ transform:scale(.96); }
+.lang-pair{ display:flex; gap:8px; }
+.lang-pair button{ flex:1 1 0; min-height:44px; border-radius:10px;
+  background:var(--card); border:1px solid var(--line-firm); color:var(--ink-soft);
+  font-size:15px; font-weight:600; }
+.lang-pair button[aria-pressed="true"]{ background:var(--green); color:var(--on-green); border-color:var(--green); }
+.coffee-btn{ margin-top:14px; text-decoration:none; }
+.coffee-btn svg{ width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:1.7;
+  stroke-linecap:round; stroke-linejoin:round; }
+
+/* ---------------- stanza condivisa / bacheca ---------------- */
+.tasklist{ display:flex; flex-direction:column; gap:10px; }
+.task-row{ display:flex; align-items:center; gap:12px; padding:14px 15px;
+  background:var(--card); border:1px solid var(--line); border-radius:13px; }
+.task-row-ico{ flex:none; width:38px; height:38px; border-radius:999px;
+  background:var(--paper); display:grid; place-items:center; }
+.task-row-ico svg{ width:19px; height:19px; stroke:var(--green); fill:none;
+  stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+.task-row-body{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.task-row-body b{ font-size:16px; font-weight:600; line-height:1.3; text-wrap:balance; }
+.task-row-body small{ font-size:14px; color:var(--ink-dim); line-height:1.35; }
+.task-row-who{ font-size:13px; color:var(--green); font-weight:600; }
+.task-row.done{ opacity:.6; }
+.task-row.done .task-row-body b{ text-decoration:line-through; }
+.task-row-actions{ flex:none; display:flex; flex-direction:column; gap:6px; }
+.chip-btn{ padding:0 14px; min-height:38px; border-radius:999px; font-size:14px; font-weight:600;
+  white-space:nowrap; background:var(--paper); border:1px solid var(--line-firm); color:var(--ink); }
+.chip-btn.primary{ background:var(--green); color:var(--on-green); border-color:var(--green); }
+.chip-btn:active{ transform:scale(.96); }
+.board-empty{ padding:20px; text-align:center; font-size:15px; color:var(--ink-dim); }
+.fab-add{ position:sticky; bottom:calc(16px + env(safe-area-inset-bottom)); z-index:5; }
+
+.room-box{ display:flex; flex-direction:column; gap:12px; padding:16px 18px;
+  background:var(--sand); border-radius:14px; }
+.room-box-row{ display:flex; gap:8px; align-items:center; }
+.room-code{ font-family:var(--serif); font-size:19px; font-weight:600; word-break:break-all; flex:1 1 auto; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <header class="top">
+    <div class="ring" aria-hidden="true">
+      <svg viewBox="0 0 52 52">
+        <circle class="ring-track" cx="26" cy="26" r="24"></circle>
+        <circle class="ring-halo"  cx="26" cy="26" r="24" id="halo"></circle>
+        <circle class="ring-arc"   cx="26" cy="26" r="24"></circle>
+      </svg>
+      <div class="ring-initial" id="avatar">·</div>
+    </div>
+    <div class="who">
+      <p class="who-name" id="who"></p>
+      <p class="who-meta" id="meta"></p>
+    </div>
+    <div class="count" id="count" hidden>
+      <span class="stack" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span id="count-label"></span>
+    </div>
+    <button class="lang-switch" id="lang-switch" type="button">EN</button>
+  </header>
+
+  <main id="main">
+
+    <div class="warn" id="warn" hidden>
+      <b id="warn-title" data-i18n="warnTitle">Non riesco a caricare la bacheca</b>
+      <p id="warn-text"></p>
+    </div>
+
+    <!-- ============ BACHECA ============ -->
+    <div class="view" id="v-board" hidden>
+
+      <button class="btn primary" id="btn-add-task" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        <span data-i18n="addTaskBtn">Nuovo compito</span>
+      </button>
+      <div class="pills" style="margin-top:12px">
+        <button class="pill" id="btn-share-board" type="button" data-i18n="shareRoomBtn">Condividi su WhatsApp</button>
+      </div>
+
+      <div class="block" id="blk-open" style="margin-top:26px">
+        <p class="eyebrow" data-i18n="boardOpenLabel">Da fare</p>
+        <div class="tasklist" id="list-open" style="margin-top:14px"></div>
+        <p class="board-empty" id="empty-open" hidden data-i18n="boardEmpty">Nessun compito al momento. Aggiungine uno.</p>
+      </div>
+
+      <div class="block" id="blk-claimed" hidden>
+        <p class="eyebrow" data-i18n="boardClaimedLabel">In corso</p>
+        <div class="tasklist" id="list-claimed" style="margin-top:14px"></div>
+      </div>
+
+      <div class="block" id="blk-done" hidden>
+        <p class="eyebrow" data-i18n="boardDoneLabel">Fatto</p>
+        <div class="tasklist" id="list-done" style="margin-top:14px"></div>
+        <button class="btn quiet" id="btn-clear-done" type="button" data-i18n="clearDoneBtn">Svuota i fatti</button>
+      </div>
+
+      <p class="settings-link"><button id="btn-settings" type="button" data-i18n="settingsLink">Impostazioni</button></p>
+    </div>
+
+    <!-- ============ NUOVO COMPITO ============ -->
+    <div class="view" id="v-compose" hidden>
+
+      <div class="block">
+        <div>
+          <p class="eyebrow" data-i18n="step1Eyebrow">Cosa serve</p>
+          <h2 class="step" id="s1" tabindex="-1" data-i18n="step1Title">Scegli il compito</h2>
+          <p class="hint" data-i18n="step1Hint">Descrivi cosa va fatto, non chi deve farlo.</p>
+        </div>
+        <div class="grid" id="tiles" role="group" aria-labelledby="s1"></div>
+
+        <div class="detail" id="detail" hidden>
+          <div class="detail-head"><b id="d-label"></b><span id="d-meta"></span></div>
+
+          <div id="d-list" hidden>
+            <div class="items" id="d-items"></div>
+            <div class="row" style="margin-top:8px">
+              <input class="input" id="d-draft" autocomplete="off" autocapitalize="sentences"
+                     enterkeyhint="done" maxlength="80" aria-label="Aggiungi alla lista">
+              <button class="add" id="d-add" type="button" data-i18n="addItemBtn">Aggiungi</button>
+            </div>
+          </div>
+
+          <div id="d-text" hidden>
+            <input class="input" id="d-value" autocomplete="off" autocapitalize="sentences"
+                   enterkeyhint="done" maxlength="140" aria-label="Dettagli">
+            <p class="micro" id="d-note" style="margin-top:8px"></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="block">
+        <div>
+          <p class="eyebrow" data-i18n="step2Eyebrow">Quando</p>
+          <h2 class="step" id="s2" data-i18n="step2Title">Un momento indicativo</h2>
+        </div>
+        <div class="chips" id="whens" role="group" aria-labelledby="s2"></div>
+        <div id="day-wrap" hidden>
+          <label class="lbl" for="f-day" data-i18n="dayLabel">Che giorno</label>
+          <input class="input" id="f-day" type="date" style="max-width:260px;margin-top:7px">
+        </div>
+      </div>
+
+      <div class="block">
+        <div>
+          <p class="eyebrow" data-i18n="step3Eyebrow">Facoltativo</p>
+          <h2 class="step" id="s3" data-i18n="step3Title">Una nota</h2>
+          <p class="hint" id="s3-hint" data-i18n="step3Hint"></p>
+        </div>
+        <textarea class="input" id="f-words" rows="2" aria-labelledby="s3" data-i18n-ph="wordsPlaceholder"></textarea>
+      </div>
+
+      <div class="stack-actions">
+        <button class="btn primary" id="btn-send" type="button" data-i18n="addTaskBtn">Aggiungi</button>
+        <button class="btn quiet" id="btn-cancel-compose" type="button" data-i18n="cancelBtn">Annulla</button>
+      </div>
+    </div>
+
+    <!-- ============ IMPOSTAZIONI ============ -->
+    <div class="view" id="v-settings" hidden>
+      <h2 class="step" id="k-set" tabindex="-1" style="margin-top:0" data-i18n="settingsTitle">Impostazioni</h2>
+      <p class="hint" style="margin-top:6px" data-i18n="settingsHint">Restano su questo telefono.</p>
+
+      <div class="block" style="margin-top:24px">
+
+        <div class="room-box">
+          <p class="lbl" data-i18n="roomLabel">Il link della tua famiglia</p>
+          <div class="room-box-row">
+            <span class="room-code" id="room-link-display"></span>
+          </div>
+          <div class="pills">
+            <button class="pill" id="btn-copy-room" type="button" data-i18n="copyLink">Copia il link</button>
+            <button class="pill" id="btn-share-room" type="button" data-i18n="shareRoomBtn">Condividi su WhatsApp</button>
+          </div>
+          <p class="micro" data-i18n="roomHint"></p>
+        </div>
+
+        <div>
+          <label class="lbl" for="f-myname" data-i18n="myNameLabel">Il tuo nome</label>
+          <p class="micro" style="margin:5px 0 7px" data-i18n="myNameHint"></p>
+          <input class="input" id="f-myname" style="margin-top:7px" autocomplete="off">
+        </div>
+
+        <div>
+          <label class="lbl" for="f-name" data-i18n="nameLabel">Come si chiama</label>
+          <input class="input" id="f-name" style="margin-top:7px" autocomplete="off">
+        </div>
+        <div>
+          <label class="lbl" for="f-place" data-i18n="placeLabel">Dove abita</label>
+          <input class="input" id="f-place" style="margin-top:7px" autocomplete="off">
+        </div>
+        <div>
+          <label class="lbl" for="f-size" data-i18n="sizeLabel">Quante persone nel cerchio</label>
+          <input class="input" id="f-size" type="number" min="0" max="30" inputmode="numeric" style="margin-top:7px;max-width:140px">
+        </div>
+        <div>
+          <label class="lbl" for="f-cond" data-i18n="condLabel">Cosa preferisce fare da sé</label>
+          <p class="micro" style="margin:5px 0 7px" data-i18n="condHint"></p>
+          <textarea class="input" id="f-cond" rows="3" data-i18n-ph="condPlaceholder"></textarea>
+        </div>
+        <button class="btn primary" id="btn-save" style="margin-top:6px" data-i18n="saveBtn">Salva</button>
+
+        <div style="margin-top:8px">
+          <label class="lbl" data-i18n="langLabel">Lingua</label>
+          <div class="lang-pair" id="lang-pair" role="group" style="margin-top:7px">
+            <button type="button" data-lang="it" aria-pressed="false">Italiano</button>
+            <button type="button" data-lang="en" aria-pressed="false">English</button>
+          </div>
+        </div>
+
+        <a class="btn ghost coffee-btn" id="btn-coffee" href="#" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h13v6a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M17 9h1.5a2.5 2.5 0 0 1 0 5H17"/><path d="M8 3c-.5 1 .5 1.5 0 3M12 3c-.5 1 .5 1.5 0 3"/></svg>
+          <span data-i18n="coffeeBtn">Offrimi un caffè</span>
+        </a>
+
+        <p class="settings-link"><button id="btn-back-board" type="button" data-i18n="backBtn">Torna alla bacheca</button></p>
+      </div>
+    </div>
+
+  </main>
+
+  <p class="sr" role="status" aria-live="polite" id="live"></p>
+</div>
+
+<div class="toast-layer"><p class="toast" id="toast" role="status" aria-live="polite"></p></div>
+
+<script>
+"use strict";
+
+/* ========================== 1 · ICONE ========================== */
+const ICONS = {
+  tavola:'<path d="M4 10h16a8 8 0 0 1-8 8 8 8 0 0 1-8-8z"/><path d="M3 21h18"/><path d="M9 6c0-1 1-1 1-2M13 6c0-1 1-1 1-2"/>',
+  sparecchiare:'<circle cx="12" cy="11" r="7"/><path d="M9 21h6"/><path d="M12 18v3"/>',
+  lavastoviglie:'<rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="8" cy="7" r="1.2"/><path d="M4 11h16"/><path d="M8 15h8"/>',
+  straccio:'<path d="M12 3v10"/><path d="M7 21l1-6h8l1 6"/><path d="M8 15h8"/>',
+  spazzatura:'<path d="M4 7h16"/><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/>',
+  letto:'<path d="M3 18v-7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v7"/><path d="M3 13h18"/><path d="M7 13V9"/><path d="M3 21v-3M21 21v-3"/>',
+  bucato:'<rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="13" r="5"/><circle cx="8" cy="6" r="1"/><circle cx="11" cy="6" r="1"/>',
+  animali:'<circle cx="8" cy="8" r="2"/><circle cx="16" cy="8" r="2"/><circle cx="5.5" cy="13" r="1.8"/><circle cx="18.5" cy="13" r="1.8"/><path d="M12 13c-3.5 0-6 2.3-6 5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1c0-2.7-2.5-5-6-5z"/>',
+  altro:'<path d="M4 20l4-1 10-10-3-3L5 16z"/><path d="M14 6l3 3"/>'
+};
+const svg = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[k] || ICONS.altro}</svg>`;
+
+/* ========================== 2 · COMPITI (i18n) ========================== */
+/* Metti qui il tuo link (Buy Me a Coffee, Ko-fi, PayPal.me...) per attivare il pulsante. */
+const COFFEE_URL = "";
+
+const I18N = {
+it: { code:"it", toggleLabel:"EN", locale:"it-IT",
+  ui:{
+    warnTitle:"Non riesco a caricare la bacheca",
+    step1Eyebrow:"Cosa serve", step1Title:"Scegli il compito",
+    step1Hint:"Descrivi cosa va fatto, non chi deve farlo.",
+    addItemBtn:"Aggiungi",
+    step2Eyebrow:"Quando", step2Title:"Un momento indicativo", dayLabel:"Che giorno",
+    step3Eyebrow:"Facoltativo", step3Title:"Una nota",
+    step3Hint:"Se vuoi aggiungere un dettaglio o un promemoria per chi lo fa, scrivilo qui.",
+    wordsPlaceholder:"Il detersivo per i piatti è quasi finito.",
+    settingsLink:"Impostazioni", copyLink:"Copia il link", coffeeBtn:"Offrimi un caffè",
+    settingsTitle:"Impostazioni", settingsHint:"Restano su questo telefono. Non escono da qui.",
+    nameLabel:"Chi manda i compiti", placeLabel:"Sottotitolo (facoltativo)",
+    sizeLabel:"Quanti figli nel gruppo", condLabel:"Note per te",
+    condHint:"Servono a te, non vengono mandate a nessuno.",
+    condPlaceholder:"Marco odia i piatti, preferisce la spazzatura. Giulia fa il bagno il martedì.",
+    saveBtn:"Salva", langLabel:"Lingua", langSwitchAria:"Cambia lingua",
+    reassure:"Se non puoi va bene.<br>Lo fa qualcun altro.",
+    addTaskBtn:"Nuovo compito", cancelBtn:"Annulla",
+    boardOpenLabel:"Da fare", boardClaimedLabel:"In corso", boardDoneLabel:"Fatto",
+    boardEmpty:"Nessun compito al momento. Aggiungine uno.",
+    clearDoneBtn:"Svuota i fatti",
+    roomLabel:"Il link della tua famiglia",
+    roomHint:"Chiunque apre questo link vede e aggiorna la stessa bacheca. Salvalo o condividilo.",
+    shareRoomBtn:"Condividi su WhatsApp",
+    myNameLabel:"Il tuo nome",
+    myNameHint:"Compare quando ti prendi un compito. Resta su questo telefono.",
+    backBtn:"Torna alla bacheca",
+    doneBtn:"Fatto", unclaimBtn:"Lascia", reopenBtn:"Riapri",
+    yesBtn:"Lo faccio io"
+  },
+  tasks:[
+    { id:"tavola",        icon:"tavola",        t:"Apparecchiare",         h:"piatti, posate, bicchieri" },
+    { id:"sparecchiare",  icon:"sparecchiare",  t:"Sparecchiare",          h:"e pulire il tavolo" },
+    { id:"lavastoviglie", icon:"lavastoviglie", t:"Lavastoviglie",         h:"caricarla o svuotarla" },
+    { id:"straccio",      icon:"straccio",      t:"Passare lo straccio",   h:"cucina o bagno" },
+    { id:"spazzatura",    icon:"spazzatura",    t:"Buttare la spazzatura", h:"anche la differenziata" },
+    { id:"letto",         icon:"letto",         t:"Rifare il letto",       h:"il tuo, o quello degli ospiti" },
+    { id:"bucato",        icon:"bucato",        t:"Bucato",                h:"stendere o piegare" },
+    { id:"animali",       icon:"animali",       t:"Dare da mangiare",      h:"al cane o al gatto" },
+    { id:"altro",         icon:"altro",         t:"Altro",                 h:"scrivi tu" }
+  ],
+  whens:[
+    { id:"oggi", label:"Oggi" },
+    { id:"domani", label:"Domani" },
+    { id:"settimana", label:"Questa settimana" },
+    { id:"ognigiorno", label:"Ogni giorno" },
+    { id:"ricorrente", label:"Ogni settimana" },
+    { id:"giorno", label:"Scegli il giorno" }
+  ],
+  details:{
+    tavola:        { kind:"text", label:"Per quante persone", ph:"es. siamo in 4 stasera" },
+    sparecchiare:  { kind:"text", label:"Qualcosa da sapere", ph:"es. lascia le pentole in ammollo" },
+    lavastoviglie: { kind:"text", label:"Caricare o svuotare", ph:"es. è finito il lavaggio, va svuotata" },
+    straccio:      { kind:"text", label:"Dove serve", ph:"es. cucina e ingresso" },
+    spazzatura:    { kind:"list", label:"Quali sacchi", ph:"es. umido" },
+    letto:         { kind:"text", label:"Di chi", ph:"es. il letto degli ospiti" },
+    bucato:        { kind:"text", label:"Stendere o piegare", ph:"es. il bucato è in lavatrice, va steso" },
+    animali:       { kind:"text", label:"Cosa serve", ph:"es. anche l'acqua, per favore" },
+    altro:         { kind:"text", label:"Di cosa si tratta", ph:"es. innaffiare le piante",
+                     note:"Basta una frase." }
+  },
+  tpl:{
+    countLabel: n => `${n} nel gruppo`,
+    itemCount: n => `${n} ${n === 1 ? "cosa" : "cose"}`,
+    turnLabel: name => `Tocca a ${name}`,
+    shareRoomMsg: link => `Guarda i compiti di casa: ${link}`,
+    loadError:"Controlla la connessione e riprova.",
+    hintNeedTask:"Scegli cosa serve prima di aggiungere.",
+    toastVoceAccorciata:"Voce accorciata: tienile brevi.",
+    toastGiaLista:"C'è già nella lista.",
+    toastLinkCopiato:"Link copiato.",
+    toastMessaggioCopiato:"Messaggio copiato: incollalo in WhatsApp.",
+    toastCopiato:"Copiato.",
+    toastCopiaFallita:"Copia non riuscita: seleziona il testo a mano.",
+    toastSalvatoOk:"Salvato.",
+    toastCoffeeMissing:"Aggiungi il tuo link nel codice (COFFEE_URL) per attivare questo pulsante.",
+    announceImpostazioniSalvate:"Impostazioni salvate.",
+    announceAggiunto:"Aggiunto alla bacheca."
+  }
+},
+en:{ code:"en", toggleLabel:"IT", locale:"en-GB",
+  ui:{
+    warnTitle:"Can't load the board",
+    step1Eyebrow:"What's needed", step1Title:"Choose the chore",
+    step1Hint:"Describe what needs doing, not who should do it.",
+    addItemBtn:"Add",
+    step2Eyebrow:"When", step2Title:"A rough time", dayLabel:"Which day",
+    step3Eyebrow:"Optional", step3Title:"A note",
+    step3Hint:"If you want to add a detail or a reminder for whoever does it, write it here.",
+    wordsPlaceholder:"The dish soap is almost out.",
+    settingsLink:"Settings", copyLink:"Copy the link", coffeeBtn:"Buy me a coffee",
+    settingsTitle:"Settings", settingsHint:"These stay on this phone. They don't leave here.",
+    nameLabel:"Who's sending the chores", placeLabel:"Subtitle (optional)",
+    sizeLabel:"How many kids in the group", condLabel:"Notes for you",
+    condHint:"These are for you, they're never sent to anyone.",
+    condPlaceholder:"Marco hates the dishes, prefers the trash. Giulia has a bath on Tuesdays.",
+    saveBtn:"Save", langLabel:"Language", langSwitchAria:"Change language",
+    reassure:"It's okay if you can't.<br>Someone else will do it.",
+    addTaskBtn:"New task", cancelBtn:"Cancel",
+    boardOpenLabel:"To do", boardClaimedLabel:"In progress", boardDoneLabel:"Done",
+    boardEmpty:"No tasks right now. Add one.",
+    clearDoneBtn:"Clear done",
+    roomLabel:"Your family's link",
+    roomHint:"Anyone who opens this link sees and updates the same board. Save it or share it.",
+    shareRoomBtn:"Share on WhatsApp",
+    myNameLabel:"Your name",
+    myNameHint:"Shown when you take a task. Stays on this phone.",
+    backBtn:"Back to the board",
+    doneBtn:"Done", unclaimBtn:"Leave it", reopenBtn:"Reopen",
+    yesBtn:"I'll do it"
+  },
+  tasks:[
+    { id:"tavola",        icon:"tavola",        t:"Set the table",       h:"plates, cutlery, glasses" },
+    { id:"sparecchiare",  icon:"sparecchiare",  t:"Clear the table",     h:"and wipe it down" },
+    { id:"lavastoviglie", icon:"lavastoviglie", t:"Dishwasher",          h:"load it or empty it" },
+    { id:"straccio",      icon:"straccio",      t:"Mop the floor",       h:"kitchen or bathroom" },
+    { id:"spazzatura",    icon:"spazzatura",    t:"Take out the trash",  h:"recycling too" },
+    { id:"letto",         icon:"letto",         t:"Make the bed",        h:"yours, or the guest room" },
+    { id:"bucato",        icon:"bucato",        t:"Laundry",             h:"hang it up or fold it" },
+    { id:"animali",       icon:"animali",       t:"Feed the pet",        h:"the dog or the cat" },
+    { id:"altro",         icon:"altro",         t:"Something else",      h:"write it in" }
+  ],
+  whens:[
+    { id:"oggi", label:"Today" },
+    { id:"domani", label:"Tomorrow" },
+    { id:"settimana", label:"This week" },
+    { id:"ognigiorno", label:"Every day" },
+    { id:"ricorrente", label:"Every week" },
+    { id:"giorno", label:"Choose the day" }
+  ],
+  details:{
+    tavola:        { kind:"text", label:"How many people", ph:"e.g. there are 4 of us tonight" },
+    sparecchiare:  { kind:"text", label:"Something to know", ph:"e.g. leave the pots soaking" },
+    lavastoviglie: { kind:"text", label:"Load or empty", ph:"e.g. the cycle's done, needs emptying" },
+    straccio:      { kind:"text", label:"Where it's needed", ph:"e.g. kitchen and entryway" },
+    spazzatura:    { kind:"list", label:"Which bags", ph:"e.g. food waste" },
+    letto:         { kind:"text", label:"Whose bed", ph:"e.g. the guest room bed" },
+    bucato:        { kind:"text", label:"Hang or fold", ph:"e.g. it's in the washer, needs hanging" },
+    animali:       { kind:"text", label:"What's needed", ph:"e.g. fresh water too, please" },
+    altro:         { kind:"text", label:"What it's about", ph:"e.g. water the plants",
+                     note:"One sentence is enough." }
+  },
+  tpl:{
+    countLabel: n => `${n} in the group`,
+    itemCount: n => `${n} ${n === 1 ? "thing" : "things"}`,
+    turnLabel: name => `${name}'s turn`,
+    shareRoomMsg: link => `Check out the household chores: ${link}`,
+    loadError:"Check your connection and try again.",
+    hintNeedTask:"Choose what's needed before adding.",
+    toastVoceAccorciata:"Item shortened: keep them brief.",
+    toastGiaLista:"Already on the list.",
+    toastLinkCopiato:"Link copied.",
+    toastMessaggioCopiato:"Message copied: paste it in WhatsApp.",
+    toastCopiato:"Copied.",
+    toastCopiaFallita:"Copy failed: select the text by hand.",
+    toastSalvatoOk:"Saved.",
+    toastCoffeeMissing:"Add your link in the code (COFFEE_URL) to enable this button.",
+    announceImpostazioniSalvate:"Settings saved.",
+    announceAggiunto:"Added to the board."
+  }
+}
+};
+
+/* ========================== 3 · STATO ========================== */
+const el = id => document.getElementById(id);
+const KEY_SETUP = "cerchio:setup", KEY_ROOM = "cerchio:room", KEY_MYNAME = "cerchio:myname";
+const store = {
+  get(k, f){ try { return JSON.parse(localStorage.getItem(k)) ?? f; } catch { return f; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  del(k){ try { localStorage.removeItem(k); } catch {} }
+};
+
+const KEY_LANG = "cerchio:lang";
+function defaultLang(){
+  const saved = store.get(KEY_LANG, null);
+  if (saved === "it" || saved === "en") return saved;
+  return (navigator.language || "it").toLowerCase().startsWith("it") ? "it" : "en";
+}
+let LANG = defaultLang();
+const S = () => I18N[LANG].ui;
+const TP = () => I18N[LANG].tpl;
+let TASKS = I18N[LANG].tasks, WHENS = I18N[LANG].whens, DETAILS = I18N[LANG].details;
+
+let setup = Object.assign({ name:"", place:"", size:0, conditions:"" }, store.get(KEY_SETUP, {}));
+let myName = store.get(KEY_MYNAME, "");
+let draft = { task:null, lists:{}, texts:{}, when:null, day:"", words:"" };
+let room = { _v:"", setup:{ name:"", place:"", size:0, lang:LANG }, tasks:[] };
+let ROOM_CODE = "";
+let current = null;
+let pollTimer = null;
+/* Ogni risposta porta la propria versione (_v, basata sull'istante di
+   scrittura sul server). Una GET di poll partita prima di un'azione ma
+   arrivata dopo può comunque contenere dati leggermente vecchi (piccola
+   latenza di propagazione dello storage): confrontando le versioni,
+   invece dell'ordine di arrivo in rete, scartiamo sempre chi è più vecchio,
+   indipendentemente da quando la risposta arriva. */
+async function withRoom(promise){
+  const data = await promise;
+  if (!room._v || (data._v && data._v >= room._v)) room = data;
+  return room;
+}
+
+const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const buzz = () => { try { navigator.vibrate && navigator.vibrate(12); } catch {} };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+
+function rndCode(len){
+  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+  let s = "";
+  for (let i = 0; i < len; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return s;
+}
+
+function resolveRoomCode(){
+  const q = new URLSearchParams(location.search).get("r");
+  if (q && /^[a-z0-9]{4,24}$/i.test(q)){
+    store.set(KEY_ROOM, q.toLowerCase());
+    return q.toLowerCase();
+  }
+  const saved = store.get(KEY_ROOM, null);
+  const code = saved || rndCode(8);
+  if (!saved) store.set(KEY_ROOM, code);
+  try {
+    const u = new URL(location.href);
+    u.searchParams.set("r", code);
+    history.replaceState(null, "", u.toString());
+  } catch {}
+  return code;
+}
+
+function roomUrl(){
+  const clean = (location.origin + location.pathname).replace(/\?.*$/, "").replace(/#.*$/, "");
+  return clean + "?r=" + ROOM_CODE;
+}
+
+/* ========================== 4 · API ========================== */
+async function apiGet(){
+  const res = await fetch(`/api/room?code=${encodeURIComponent(ROOM_CODE)}`, { cache:"no-store" });
+  if (!res.ok) throw new Error("get_failed");
+  return res.json();
+}
+async function apiPost(body){
+  const res = await fetch(`/api/room?code=${encodeURIComponent(ROOM_CODE)}`, {
+    method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error("post_failed");
+  return res.json();
+}
+async function loadRoom(silent){
+  try {
+    await withRoom(apiGet());
+    el("warn").hidden = true;
+    applyRoomHeader();
+    if (current === "board") renderBoard();
+    return true;
+  } catch (e){
+    if (!silent){
+      el("warn-text").textContent = TP().loadError;
+      el("warn").hidden = false;
+    }
+    return false;
+  }
+}
+function startPolling(){
+  stopPolling();
+  pollTimer = setInterval(() => { if (!document.hidden) loadRoom(true); }, 6000);
+}
+function stopPolling(){ if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
+document.addEventListener("visibilitychange", () => { if (!document.hidden) loadRoom(true); });
+
+/* ========================== 5 · NAVIGAZIONE ========================== */
+const VIEWS = {
+  board:{ v:"v-board", f:"btn-add-task" },
+  compose:{ v:"v-compose", f:"s1" },
+  settings:{ v:"v-settings", f:"k-set" }
+};
+function go(key, announce){
+  const next = VIEWS[key]; if (!next) return;
+  const paint = () => {
+    Object.values(VIEWS).forEach(x => el(x.v).hidden = true);
+    el(next.v).hidden = false;
+    const node = el(next.v);
+    node.classList.add("enter");
+    requestAnimationFrame(() => requestAnimationFrame(() => node.classList.remove("enter")));
+    window.scrollTo(0, 0);
+    setTimeout(() => { try { el(next.f).focus({ preventScroll:true }); } catch {} },
+      reduced() ? 0 : 260);
+    if (announce) el("live").textContent = announce;
+    current = key;
+    if (key === "board") renderBoard();
+    if (key === "settings"){ el("room-link-display").textContent = roomUrl(); }
+  };
+  if (current && !reduced()){
+    const old = el(VIEWS[current].v);
+    old.classList.add("leave");
+    setTimeout(() => { old.classList.remove("leave"); paint(); }, 190);
+  } else paint();
+}
+
+let tTimer = null;
+function toast(text){
+  const n = el("toast");
+  n.textContent = text; n.classList.add("show");
+  if (tTimer) clearTimeout(tTimer);
+  tTimer = setTimeout(() => n.classList.remove("show"), 4600);
+}
+
+/* ========================== 6 · LINGUA ========================== */
+function applyStaticI18n(){
+  const s = S();
+  document.querySelectorAll("[data-i18n]").forEach(n => {
+    const k = n.dataset.i18n; if (s[k] != null) n.textContent = s[k];
+  });
+  document.querySelectorAll("[data-i18n-html]").forEach(n => {
+    const k = n.dataset.i18nHtml; if (s[k] != null) n.innerHTML = s[k];
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach(n => {
+    const k = n.dataset.i18nPh; if (s[k] != null) n.placeholder = s[k];
+  });
+  document.documentElement.lang = LANG;
+  el("lang-switch").textContent = I18N[LANG].toggleLabel;
+  el("lang-switch").setAttribute("aria-label", s.langSwitchAria);
+  el("lang-pair").querySelectorAll("button").forEach(b =>
+    b.setAttribute("aria-pressed", String(b.dataset.lang === LANG)));
+  el("btn-coffee").href = COFFEE_URL || "#";
+}
+function rerenderCurrentView(){
+  if (current === "board") renderBoard();
+  else if (current === "compose"){ renderComposerLists(); paintDetail(); }
+  else if (current === "settings"){ el("room-link-display").textContent = roomUrl(); }
+}
+function setLang(l, persist){
+  LANG = l;
+  if (persist) store.set(KEY_LANG, LANG);
+  TASKS = I18N[LANG].tasks; WHENS = I18N[LANG].whens; DETAILS = I18N[LANG].details;
+  applyStaticI18n();
+}
+function applyLang(l){ setLang(l, true); rerenderCurrentView(); }
+el("lang-switch").onclick = () => { buzz(); applyLang(LANG === "it" ? "en" : "it"); };
+el("lang-pair").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  buzz(); applyLang(b.dataset.lang);
+});
+el("btn-coffee").addEventListener("click", e => {
+  if (!COFFEE_URL){ e.preventDefault(); toast(TP().toastCoffeeMissing); }
+});
+
+/* ========================== 7 · BACHECA ========================== */
+function applyRoomHeader(){
+  const s = room.setup || {};
+  const name = s.name || setup.name || "";
+  const place = s.place || setup.place || "";
+  const size = s.size || setup.size || 0;
+  el("avatar").textContent = (name || "?").charAt(0).toUpperCase();
+  el("who").textContent = name || (LANG === "it" ? "La tua famiglia" : "Your family");
+  el("meta").textContent = place || "";
+  el("count").hidden = !size;
+  el("count-label").textContent = TP().countLabel(size);
+}
+
+function taskDisplay(t){
+  const def = TASKS.find(x => x.id === t.taskType);
+  const genericTitle = def ? def.t : t.taskType;
+  const title = (t.taskType === "altro" && t.detail) ? t.detail : genericTitle;
+  const w = WHENS.find(x => x.id === t.when);
+  let whenText = "";
+  if (t.when === "giorno" && t.day){
+    const d = new Date(t.day + "T12:00:00");
+    if (!isNaN(d.getTime())){
+      whenText = new Intl.DateTimeFormat(I18N[LANG].locale,
+        { weekday:"long", day:"numeric", month:"long", timeZone:"Europe/Rome" }).format(d);
+    }
+  } else if (w) whenText = w.label;
+  const noteParts = [];
+  if (t.list && t.list.length) noteParts.push(t.list.join(" · "));
+  if (t.taskType !== "altro" && t.detail) noteParts.push(t.detail);
+  if (t.note) noteParts.push(t.note);
+  return { title, whenText, note: noteParts.join(" — "), icon: (def && def.icon) || "altro" };
+}
+
+function taskRow(t){
+  const d = taskDisplay(t);
+  const metaBits = [d.whenText, d.note].filter(Boolean).join(" · ");
+  let actions = "";
+  if (t.status === "open"){
+    actions = `<button class="chip-btn primary" data-act="claim" data-id="${t.id}">${esc(S().yesBtn)}</button>`;
+  } else if (t.status === "claimed"){
+    actions = `<button class="chip-btn primary" data-act="done" data-id="${t.id}">${esc(S().doneBtn)}</button>
+               <button class="chip-btn" data-act="unclaim" data-id="${t.id}">${esc(S().unclaimBtn)}</button>`;
+  } else {
+    actions = `<button class="chip-btn" data-act="reopen" data-id="${t.id}">${esc(S().reopenBtn)}</button>`;
+  }
+  const who = t.status !== "open" && t.claimedBy
+    ? `<span class="task-row-who">${esc(TP().turnLabel(t.claimedBy))}</span>` : "";
+  return `<div class="task-row ${t.status === "done" ? "done" : ""}" data-id="${t.id}">
+    <div class="task-row-ico">${svg(d.icon)}</div>
+    <div class="task-row-body"><b>${esc(d.title)}</b><small>${esc(metaBits)}</small>${who}</div>
+    <div class="task-row-actions">${actions}</div>
+  </div>`;
+}
+
+function renderBoard(){
+  const tasks = room.tasks || [];
+  const open = tasks.filter(t => t.status === "open").sort((a,b) => a.createdAt - b.createdAt);
+  const claimed = tasks.filter(t => t.status === "claimed").sort((a,b) => a.createdAt - b.createdAt);
+  const done = tasks.filter(t => t.status === "done").sort((a,b) => (b.doneAt||0) - (a.doneAt||0));
+
+  el("list-open").innerHTML = open.map(taskRow).join("");
+  el("empty-open").hidden = open.length !== 0;
+  el("blk-claimed").hidden = claimed.length === 0;
+  el("list-claimed").innerHTML = claimed.map(taskRow).join("");
+  el("blk-done").hidden = done.length === 0;
+  el("list-done").innerHTML = done.map(taskRow).join("");
+}
+
+function boardAction(e){
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const act = b.dataset.act, id = b.dataset.id;
+  buzz();
+  const anon = LANG === "it" ? "Qualcuno" : "Someone";
+  let p;
+  if (act === "claim") p = apiPost({ action:"claim", id, by: myName || anon });
+  else if (act === "unclaim") p = apiPost({ action:"unclaim", id });
+  else if (act === "reopen") p = apiPost({ action:"reopen", id });
+  else if (act === "done") p = apiPost({ action:"done", id });
+  else return;
+  withRoom(p).then(() => renderBoard()).catch(() => toast(TP().loadError));
+}
+["list-open","list-claimed","list-done"].forEach(id => el(id).addEventListener("click", boardAction));
+
+el("btn-clear-done").onclick = () => {
+  buzz();
+  withRoom(apiPost({ action:"clearDone" })).then(() => renderBoard()).catch(() => toast(TP().loadError));
+};
+
+async function share(text){
+  if (navigator.share){
+    try { await navigator.share({ text }); return "shared"; }
+    catch (err){ if (err && (err.name === "AbortError" || err.name === "NotAllowedError")) return "cancelled"; }
+  }
+  const w = window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank", "noopener");
+  if (!w) copy(text, TP().toastMessaggioCopiato);
+  return "opened";
+}
+async function copy(text, msg){
+  try { await navigator.clipboard.writeText(text); toast(msg || TP().toastCopiato); }
+  catch {
+    const a = document.createElement("textarea");
+    a.value = text; a.style.position = "fixed"; a.style.opacity = "0";
+    document.body.appendChild(a); a.select();
+    try { document.execCommand("copy"); toast(msg || TP().toastCopiato); }
+    catch { toast(TP().toastCopiaFallita); }
+    a.remove();
+  }
+}
+el("btn-share-board").onclick = () => { buzz(); share(TP().shareRoomMsg(roomUrl())); };
+el("btn-share-room").onclick  = () => { buzz(); share(TP().shareRoomMsg(roomUrl())); };
+el("btn-copy-room").onclick   = () => { buzz(); copy(roomUrl(), TP().toastLinkCopiato); };
+
+/* ========================== 8 · COMPOSITORE ========================== */
+function renderComposerLists(){
+  el("tiles").innerHTML = TASKS.map(t =>
+    `<button class="tile" type="button" data-id="${t.id}" aria-pressed="false">
+       <span class="tile-head">${svg(t.icon)}<span class="tick" aria-hidden="true" hidden>✓</span></span>
+       <span class="tile-body"><b>${esc(t.t)}</b><small>${esc(t.h)}</small></span>
+     </button>`).join("");
+  el("whens").innerHTML = WHENS.map(w =>
+    `<button class="chip" type="button" data-id="${w.id}" aria-pressed="false">${esc(w.label)}</button>`).join("");
+}
+
+function resetComposer(){
+  draft = { task:null, lists:{}, texts:{}, when:null, day:"", words:"" };
+  el("f-words").value = ""; el("f-day").value = "";
+  el("d-value").value = ""; el("d-draft").value = "";
+  el("day-wrap").hidden = true; el("detail").hidden = true;
+  renderComposerLists();
+}
+
+function buildComposer(){
+  renderComposerLists();
+  el("tiles").addEventListener("click", e => {
+    const b = e.target.closest(".tile"); if (!b) return;
+    buzz(); draft.task = b.dataset.id;
+    Array.from(el("tiles").children).forEach(x => {
+      const on = x === b;
+      x.setAttribute("aria-pressed", String(on));
+      x.querySelector(".tick").hidden = !on;
+    });
+    paintDetail();
+  });
+  el("whens").addEventListener("click", e => {
+    const b = e.target.closest(".chip"); if (!b) return;
+    buzz(); draft.when = b.dataset.id;
+    Array.from(el("whens").children).forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    const pick = draft.when === "giorno";
+    el("day-wrap").hidden = !pick;
+    if (pick) el("f-day").focus();
+  });
+  el("d-add").onclick = addItem;
+  el("d-draft").addEventListener("keydown", e => {
+    if (e.key === "Enter"){ e.preventDefault(); addItem(); }
+  });
+  el("d-value").addEventListener("input", e => { draft.texts[draft.task] = e.target.value; });
+  el("f-day").addEventListener("input", e => { draft.day = e.target.value; });
+  el("f-words").addEventListener("input", e => { draft.words = e.target.value; });
+}
+
+const MAX_VOCE = 80;
+function addItem(){
+  let v = el("d-draft").value.trim();
+  if (!v || !draft.task) return;
+  if (v.length > MAX_VOCE){ v = v.slice(0, MAX_VOCE).trim(); toast(TP().toastVoceAccorciata); }
+  const gia = draft.lists[draft.task] = draft.lists[draft.task] || [];
+  if (gia.some(x => x.toLowerCase() === v.toLowerCase())){
+    el("d-draft").value = ""; toast(TP().toastGiaLista); return;
+  }
+  gia.push(v);
+  el("d-draft").value = ""; el("d-draft").focus();
+  paintDetail();
+}
+
+function paintDetail(){
+  const cfg = DETAILS[draft.task];
+  el("detail").hidden = !cfg;
+  if (!cfg) return;
+  el("d-label").textContent = cfg.label;
+  el("d-list").hidden = cfg.kind !== "list";
+  el("d-text").hidden = cfg.kind !== "text";
+  if (cfg.kind === "list"){
+    const items = draft.lists[draft.task] || [];
+    el("d-meta").textContent = items.length ? TP().itemCount(items.length) : (LANG === "it" ? "Facoltativo" : "Optional");
+    el("d-items").innerHTML = items.map((x,i) =>
+      `<div class="item"><span class="dot" aria-hidden="true"></span>
+         <span class="txt">${esc(x)}</span>
+         <button class="rm" type="button" data-i="${i}" aria-label="${LANG === "it" ? "Togli" : "Remove"} ${esc(x)}">×</button></div>`).join("");
+    el("d-items").querySelectorAll(".rm").forEach(b => b.onclick = () => {
+      draft.lists[draft.task].splice(+b.dataset.i, 1);
+      paintDetail();
+    });
+    el("d-draft").placeholder = cfg.ph;
+  } else {
+    el("d-meta").textContent = LANG === "it" ? "Facoltativo" : "Optional";
+    el("d-value").value = draft.texts[draft.task] || "";
+    el("d-value").placeholder = cfg.ph;
+    el("d-note").textContent = cfg.note || "";
+  }
+}
+
+el("btn-add-task").onclick = () => { buzz(); resetComposer(); go("compose"); };
+el("btn-cancel-compose").onclick = () => { buzz(); go("board"); };
+
+el("btn-send").onclick = async () => {
+  if (!draft.task){ buzz(); toast(TP().hintNeedTask); return; }
+  buzz();
+  const cfg = DETAILS[draft.task] || {};
+  const task = {
+    taskType: draft.task,
+    when: draft.when || "",
+    day: draft.day || "",
+    detail: cfg.kind === "text" ? (draft.texts[draft.task] || "").trim() : "",
+    list: cfg.kind === "list" ? (draft.lists[draft.task] || []) : [],
+    note: (draft.words || "").trim(),
+    lang: LANG
+  };
+  try {
+    await withRoom(apiPost({ action:"addTask", task }));
+    go("board", TP().announceAggiunto);
+    toast(TP().announceAggiunto);
+  } catch (e){
+    toast(TP().loadError);
+  }
+};
+
+/* ========================== 9 · IMPOSTAZIONI ========================== */
+function openSettings(){
+  buzz();
+  el("f-myname").value = myName;
+  el("f-name").value = setup.name;
+  el("f-place").value = setup.place;
+  el("f-size").value = setup.size;
+  el("f-cond").value = setup.conditions;
+  el("room-link-display").textContent = roomUrl();
+  go("settings");
+}
+el("btn-settings").onclick = openSettings;
+el("btn-back-board").onclick = () => { buzz(); go("board"); };
+
+el("btn-save").onclick = async () => {
+  buzz();
+  myName = el("f-myname").value.trim();
+  store.set(KEY_MYNAME, myName);
+  setup = {
+    name: el("f-name").value.trim(),
+    place: el("f-place").value.trim(),
+    size: Math.max(0, Math.min(30, parseInt(el("f-size").value, 10) || 0)),
+    conditions: el("f-cond").value.trim()
+  };
+  store.set(KEY_SETUP, setup);
+  try {
+    await withRoom(apiPost({ action:"saveSetup", setup:{ name:setup.name, place:setup.place, size:setup.size, lang:LANG } }));
+  } catch (e){}
+  applyRoomHeader();
+  go("board", TP().announceImpostazioniSalvate);
+  toast(TP().toastSalvatoOk);
+};
+
+/* ========================== 10 · AVVIO ========================== */
+applyStaticI18n();
+buildComposer();
+ROOM_CODE = resolveRoomCode();
+applyRoomHeader();
+go("board");
+loadRoom(false);
+startPolling();
+</script>
+</body>
+</html>
