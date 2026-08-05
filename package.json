@@ -2,6 +2,7 @@
   "name": "i-compiti",
   "private": true,
   "dependencies": {
-    "@vercel/blob": "^2.6.1"
+    "@vercel/blob": "^2.6.1",
+    "web-push": "^3.6.7"
   }
 }
