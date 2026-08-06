@@ -439,9 +439,9 @@ h2.sealed{ font-family:var(--serif); font-size:29px; font-weight:600;
     <div class="view" id="v-join" hidden>
       <div class="block">
         <div>
-          <p class="eyebrow" data-i18n="joinEyebrow">Gruppo chiuso</p>
+          <p class="eyebrow" id="join-eyebrow" data-i18n="joinEyebrow">Gruppo chiuso</p>
           <h2 class="step" id="k-join" tabindex="-1" data-i18n="joinTitle">Come ti chiami?</h2>
-          <p class="hint" data-i18n="joinHint">Qualcuno che è già dentro dovrà autorizzarti.</p>
+          <p class="hint" id="join-hint" data-i18n="joinHint">Qualcuno che è già dentro dovrà autorizzarti.</p>
         </div>
         <input class="input" id="f-joinname" autocomplete="off" maxlength="60" data-i18n-ph="joinNamePh">
         <button class="btn primary" id="btn-join" type="button" data-i18n="joinBtn">Chiedi di entrare</button>
@@ -739,6 +739,9 @@ it: { code:"it", toggleLabel:"EN", locale:"it-IT",
     yesBtn:"Lo faccio io",
     joinEyebrow:"Gruppo chiuso", joinTitle:"Come ti chiami?",
     joinHint:"Qualcuno che è già dentro dovrà autorizzarti.",
+    joinEyebrowCreate:"Nuovo gruppo",
+    joinHintCreate:"Sei il primo: crea il gruppo, poi invita chi vuoi in famiglia.",
+    joinBtnCreate:"Crea il gruppo",
     joinNamePh:"Il tuo nome", joinBtn:"Chiedi di entrare",
     waitingEyebrow:"In attesa", waitingTitle:"Qualcuno deve farti entrare",
     waitingHint:"Non appena una persona del gruppo ti autorizza, questa pagina si aggiorna da sola.",
@@ -853,6 +856,9 @@ en:{ code:"en", toggleLabel:"IT", locale:"en-GB",
     yesBtn:"I'll do it",
     joinEyebrow:"Closed group", joinTitle:"What's your name?",
     joinHint:"Someone already inside will need to let you in.",
+    joinEyebrowCreate:"New group",
+    joinHintCreate:"You're the first one here: create the group, then invite whoever you want.",
+    joinBtnCreate:"Create the group",
     joinNamePh:"Your name", joinBtn:"Ask to join",
     waitingEyebrow:"Waiting", waitingTitle:"Someone needs to let you in",
     waitingHint:"As soon as someone from the group approves you, this page updates on its own.",
