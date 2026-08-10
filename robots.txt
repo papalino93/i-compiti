@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /*?t=*
+
+Sitemap: https://i-compiti.vercel.app/sitemap.xml
