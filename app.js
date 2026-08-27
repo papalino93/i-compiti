@@ -122,6 +122,24 @@ function extractInvite(raw){
   return code ? { code, memberId } : null;
 }
 
+/* ========================== 3b · BROWSER-IN-APP ========================== */
+/* WhatsApp/Instagram/Facebook/TikTok/... aprono i link condivisi dentro un
+   loro browser incorporato, non nel Safari/Chrome vero del telefono: su
+   molti telefoni (soprattutto Android) quel browser non conserva i dati
+   salvati (localStorage) da un'apertura all'altra. Effetto concreto: si
+   perdono il codice del gruppo e l'id personale, e alla riapertura l'app
+   non riconosce più nessuno spazio esistente — mostrando "crea un nuovo
+   gruppo" anche a chi il gruppo ce l'ha già da settimane. È la causa più
+   probabile di quel problema, quindi lo segnaliamo appena possibile. */
+function isInAppBrowser(){
+  return /FBAN|FBAV|FB_IAB|Instagram|Line\/|MicroMessenger|WhatsApp|musical_ly|BytedanceWebview|Snapchat/i.test(navigator.userAgent || "");
+}
+function checkInAppBrowser(){
+  if (isInAppBrowser()) el("inapp-warn").hidden = false;
+}
+el("btn-inapp-copy").onclick = () => { buzz(); copy(location.href, TP().toastLinkCopiato); };
+el("btn-inapp-dismiss").onclick = () => { buzz(); el("inapp-warn").hidden = true; };
+
 function enterRoom(){
   ROOM_CODE = resolveRoomCode();
   applyRoomHeader();
@@ -963,6 +981,7 @@ el("btn-cancel-join").onclick = async () => {
 /* ========================== 10 · AVVIO ========================== */
 applyStaticI18n();
 buildComposer();
+checkInAppBrowser();
 myMemberId = resolveMemberId();
 registerSW();
 if (hasRoomContext()) enterRoom();
