@@ -89,18 +89,37 @@ function hasRoomContext(){
 }
 
 // Riconosce sia un link completo (?r=codice, anche dentro testo incollato
-// con altra roba intorno) sia il codice nudo, incollati a mano.
-function extractRoomCode(raw){
+// con altra roba intorno) sia il codice nudo, incollati a mano. Se il testo
+// incollato è il proprio "link personale" (?r=codice&m=iltuoid — quello che
+// "Impostazioni → Il tuo link personale" fa mandare a se stessi apposta per
+// rientrare da un telefono/browser che ha perso i dati locali), viene
+// riconosciuto anche l'id membro: senza questo, incollarlo qui dentro
+// riportava sì nel gruppo giusto ma come persona nuova in attesa di
+// autorizzazione, vanificando l'unico modo per recuperare l'accesso senza
+// chiedere il permesso a qualcun altro.
+function extractInvite(raw){
   const text = String(raw || "").trim();
   if (!text) return null;
+  let code = null, memberId = null;
   try {
     const u = new URL(text);
     const q = u.searchParams.get("r");
-    if (q && /^[a-z0-9]{4,24}$/i.test(q)) return q.toLowerCase();
+    if (q && /^[a-z0-9]{4,24}$/i.test(q)) code = q.toLowerCase();
+    const m = u.searchParams.get("m");
+    if (m && /^m_[a-z0-9]+$/i.test(m)) memberId = m;
   } catch {}
-  if (/^[a-z0-9]{4,24}$/i.test(text)) return text.toLowerCase();
-  const m = text.match(/[?&]r=([a-z0-9]{4,24})/i);
-  return m ? m[1].toLowerCase() : null;
+  if (!code){
+    if (/^[a-z0-9]{4,24}$/i.test(text)) code = text.toLowerCase();
+    else {
+      const m = text.match(/[?&]r=([a-z0-9]{4,24})/i);
+      if (m) code = m[1].toLowerCase();
+    }
+  }
+  if (!memberId){
+    const m = text.match(/[?&]m=(m_[a-z0-9]+)/i);
+    if (m) memberId = m[1];
+  }
+  return code ? { code, memberId } : null;
 }
 
 function enterRoom(){
@@ -916,10 +935,11 @@ el("btn-leave-circle").onclick = async () => {
 /* ========================== 9d · INGRESSO ========================== */
 el("btn-landing-create").onclick = () => { buzz(); enterRoom(); };
 el("btn-landing-invite").onclick = () => {
-  const code = extractRoomCode(el("f-landing-invite").value);
-  if (!code){ buzz(); toast(S().toastInviteInvalid); return; }
+  const invite = extractInvite(el("f-landing-invite").value);
+  if (!invite){ buzz(); toast(S().toastInviteInvalid); return; }
   buzz();
-  store.set(KEY_ROOM, code);
+  store.set(KEY_ROOM, invite.code);
+  if (invite.memberId){ store.set(KEY_MEMBER, invite.memberId); myMemberId = invite.memberId; }
   enterRoom();
 };
 el("btn-join").onclick = async () => {
